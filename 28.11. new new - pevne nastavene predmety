@@ -1,0 +1,499 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define MAX_USERS 100
+#define MAX_NAME_LEN 50
+#define MAX_PASSWORD_LEN 50
+#define MAX_SUBJECTS_LEN 100
+#define MAX_GRADES 10
+#define FILE_PATH "data.txt"
+#define GRADES_FILE "grades.txt"
+#define MAX_FIXED_SUBJECTS 5
+
+typedef struct {
+    char username[MAX_NAME_LEN];
+    char password[MAX_PASSWORD_LEN];
+    char role; // 'S' = spravce, 'T' = student, 'U' = ucitel
+    char subjects[MAX_SUBJECTS_LEN]; // Predmety u ucitele, oddelene carkami
+} User;
+
+typedef struct {
+    char subject[MAX_NAME_LEN];
+    int exercisePoints;
+    int testPoints;
+    int finalExamPoints;
+    char grade;
+} Grade;
+
+const char* fixedSubjects[MAX_FIXED_SUBJECTS] = {
+    "PCT",
+    "FY",
+    "MPE",
+    "MA",
+    "EL"
+};
+
+User users[MAX_USERS];
+int userCount = 0;
+
+Grade grades[MAX_USERS][MAX_GRADES];
+int gradesCount[MAX_USERS] = { 0 };
+
+void loadUsers();
+void saveUsers();
+void loadGrades();
+void saveGrades();
+void printUsersInline(char role);
+void addUser(char role);
+void removeUser(char role);
+void addSubject(int studentIndex);
+void assignPoints(int studentIndex);
+void displayStudentGrades(int studentIndex);
+char calculateGrade(int totalPoints);
+int getValidChoice(int min, int max);
+void oddelovac();
+void goBack();
+void clc();
+
+void loadUsers() {
+    FILE* file = fopen(FILE_PATH, "r");
+    if (!file) {
+        printf("Soubor nenalezen, vytvarim novy.\n");
+        return;
+    }
+
+    userCount = 0;
+    while (fscanf(file, "%49s %49s %c %99[^\n]", users[userCount].username, users[userCount].password, &users[userCount].role, users[userCount].subjects) == 4) {
+        userCount++;
+        if (userCount >= MAX_USERS) break;
+    }
+    fclose(file);
+
+    // Přidání Admina, pokud neexistuje
+    int adminExists = 0;
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, "Admin") == 0) {
+            adminExists = 1;
+            break;
+        }
+    }
+    if (!adminExists) {
+        strcpy(users[userCount].username, "Admin");
+        strcpy(users[userCount].password, "1234"); // Výchozí heslo, případně změňte
+        users[userCount].role = 'S';
+        strcpy(users[userCount].subjects, "-");
+        userCount++;
+        //printf("Výchozí Admin přidán do paměti.\n");
+    }
+}
+
+void saveUsers() {
+    FILE* file = fopen(FILE_PATH, "w");
+    if (!file) {
+        printf("Chyba pri ukladani uzivatelu.\n");
+        return;
+    }
+
+    for (int i = 0; i < userCount; i++) {
+        // Přeskočte Admina
+        if (strcmp(users[i].username, "Admin") == 0) {
+            continue;
+        }
+        fprintf(file, "%s %s %c %s\n", users[i].username, users[i].password, users[i].role, users[i].subjects);
+    }
+    fclose(file);
+}
+
+
+void loadGrades() {
+    FILE* file = fopen(GRADES_FILE, "r");
+    if (!file) {
+        printf("Soubor znamky nenalezen.\n");
+        return;
+    }
+
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'T') {
+            int count = 0;
+            while (fscanf(file, "%49s %d %d %d %c", grades[i][count].subject,
+                &grades[i][count].exercisePoints,
+                &grades[i][count].testPoints,
+                &grades[i][count].finalExamPoints,
+                &grades[i][count].grade) == 5) {
+                count++;
+                if (count >= MAX_GRADES) break;
+            }
+            gradesCount[i] = count;
+        }
+    }
+
+    fclose(file);
+}
+void saveGrades() {
+    FILE* file = fopen(GRADES_FILE, "w");
+    if (!file) {
+        printf("Chyba pri ukladani znamky.\n");
+        return;
+    }
+
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'T') {
+            for (int j = 0; j < gradesCount[i]; j++) {
+                Grade* g = &grades[i][j];
+                fprintf(file, "%s %d %d %d %c\n", g->subject, g->exercisePoints, g->testPoints, g->finalExamPoints, g->grade);
+            }
+        }
+    }
+
+    fclose(file);
+}
+void printUsersInline(char role) {
+    printf("Seznam %s: ", role == 'S' ? "spravcu" : (role == 'T' ? "studentu" : "ucitelu"));
+    int first = 1;
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == role) {
+            if (!first) printf(", ");
+            first = 0;
+            printf("%s", users[i].username);
+        }
+    }
+    if (first) {
+        printf("zadni nejsou zaregistrovani.");
+    }
+    printf("\n");
+}
+void addUser(char role) {
+    if (userCount >= MAX_USERS) {
+        printf("Nelze pridat dalsiho uzivatele. Kapacita je plna.\n");
+        return;
+    }
+
+    char username[MAX_NAME_LEN], password[MAX_PASSWORD_LEN];
+    printf("Zadejte jmeno uzivatele: ");
+    scanf("%49s", username);
+    printf("Zadejte heslo uzivatele: ");
+    scanf("%49s", password);
+
+    strcpy(users[userCount].username, username);
+    strcpy(users[userCount].password, password);
+    users[userCount].role = role;
+    strcpy(users[userCount].subjects, "-");
+    userCount++;
+
+    printf("Uzivatel pridan.\n");
+    saveUsers();
+}
+void removeUser(char role) {
+    printf("Aktualni %s (jmena): ", role == 'S' ? "spravci" : (role == 'T' ? "studenti" : "ucitele"));
+    printUsersInline(role);
+
+    printf("\nZadejte jmeno k odstraneni: ");
+    char username[MAX_NAME_LEN];
+    scanf("%49s", username);
+
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, username) == 0 && users[i].role == role) {
+            for (int j = i; j < userCount - 1; j++) {
+                users[j] = users[j + 1]; // Posun
+            }
+            userCount--;
+            saveUsers();
+            printf("Uzivatel %s byl odstranen.\n", username);
+            return;
+        }
+    }
+
+    printf("Uzivatel nenalezen.\n");
+}
+void addSubject(int studentIndex) {
+    if (gradesCount[studentIndex] >= MAX_GRADES) {
+        printf("Maximalni pocet predmetu dosazen.\n");
+        return;
+    }
+
+    printf("Vyberte predmet:\n");
+    for (int i = 0; i < MAX_FIXED_SUBJECTS; i++) {
+        printf("%d) %s\n", i + 1, fixedSubjects[i]);
+    }
+
+    int choice = getValidChoice(1, MAX_FIXED_SUBJECTS);
+    const char* selectedSubject = fixedSubjects[choice - 1];
+
+    // Kontrola, jestli už student tento předmět nemá
+    for (int i = 0; i < gradesCount[studentIndex]; i++) {
+        if (strcmp(grades[studentIndex][i].subject, selectedSubject) == 0) {
+            printf("Tento predmet je uz studentovi prirazen.\n");
+            return;
+        }
+    }
+
+    // Přidání předmětu studentovi
+    strcpy(grades[studentIndex][gradesCount[studentIndex]].subject, selectedSubject);
+    grades[studentIndex][gradesCount[studentIndex]].exercisePoints = 0;
+    grades[studentIndex][gradesCount[studentIndex]].testPoints = 0;
+    grades[studentIndex][gradesCount[studentIndex]].finalExamPoints = 0;
+    grades[studentIndex][gradesCount[studentIndex]].grade = 'F';
+
+    gradesCount[studentIndex]++;
+    printf("Predmet '%s' pridan.\n", selectedSubject);
+    saveGrades();
+}
+
+void assignPoints(int studentIndex) {
+    if (gradesCount[studentIndex] == 0) {
+        printf("Tento student nema zadne zapsane predmety.\n");
+        return;
+    }
+
+    printf("Vyberte predmet:\n");
+    for (int i = 0; i < gradesCount[studentIndex]; i++) {
+        printf("%d) %s\n", i + 1, grades[studentIndex][i].subject);
+    }
+
+    int choice;
+    printf("Zadejte cislo predmetu: ");
+    scanf("%d", &choice);
+
+    if (choice < 1 || choice > gradesCount[studentIndex]) {
+        printf("Neplatna volba.\n");
+        return;
+    }
+
+    Grade* grade = &grades[studentIndex][choice - 1];
+    printf("Zadejte body za cviceni: ");
+    scanf("%d", &grade->exercisePoints);
+    printf("Zadejte body za test: ");
+    scanf("%d", &grade->testPoints);
+    printf("Zadejte body za zkousku: ");
+    scanf("%d", &grade->finalExamPoints);
+
+    int totalPoints = grade->exercisePoints + grade->testPoints + grade->finalExamPoints;
+
+    if (totalPoints >= 90) grade->grade = 'A';
+    else if (totalPoints >= 75) grade->grade = 'B';
+    else if (totalPoints >= 60) grade->grade = 'C';
+    else if (totalPoints >= 50) grade->grade = 'D';
+    else grade->grade = 'E';
+
+    printf("Znamka prirazena: %c\n", grade->grade);
+    saveGrades();
+}
+void displayStudentGrades(int studentIndex) {
+    if (gradesCount[studentIndex] == 0) {
+        printf("Tento student nema zadne znamky.\n");
+        return;
+    }
+
+    printf("Znamky studenta %s:\n", users[studentIndex].username);
+    for (int i = 0; i < gradesCount[studentIndex]; i++) {
+        Grade* grade = &grades[studentIndex][i];
+        printf("Predmet: %s\n", grade->subject);
+        printf("  Body za cviceni: %d\n", grade->exercisePoints);
+        printf("  Body za test: %d\n", grade->testPoints);
+        printf("  Body za zkousku: %d\n", grade->finalExamPoints);
+        printf("  Znamka: %c\n", grade->grade);
+    }
+}
+char calculateGrade(int totalPoints) {
+    if (totalPoints >= 90) return 'A';
+    if (totalPoints >= 75) return 'B';
+    if (totalPoints >= 60) return 'C';
+    if (totalPoints >= 50) return 'D';
+    return 'E';
+}
+int getValidChoice(int min, int max) {
+    int choice;
+    while (1) {
+        printf("Vyberte moznost (%d-%d): ", min, max);
+        if (scanf("%d", &choice) == 1 && choice >= min && choice <= max) {
+            return choice;
+        }
+        printf("Neplatna volba. Zkuste znovu.\n");
+        while (getchar() != '\n'); // Vycisteni bufferu
+    }
+}
+void oddelovac() {
+    printf("------------------------------\n");
+}
+void goBack() {
+    printf("Navrat do menu...\n");
+}
+
+void clc() {
+    system("cls"); // Windows
+}
+
+int main() {
+    loadUsers();
+    loadGrades();
+
+    if (userCount == 0) {
+        strcpy(users[0].username, "Admin");
+        strcpy(users[0].password, "1234");
+        users[0].role = 'S';
+        strcpy(users[0].subjects, "-");
+        userCount++;
+        saveUsers();
+    }
+
+    while (1) {
+        char username[MAX_NAME_LEN], password[MAX_PASSWORD_LEN];
+        printf("Zadejte uzivatelske jmeno: ");
+        scanf("%49s", username);
+        printf("Zadejte heslo: ");
+        scanf("%49s", password);
+
+        int loggedIn = 0;
+        for (int i = 0; i < userCount; i++) {
+            if (strcmp(users[i].username, username) == 0 && strcmp(users[i].password, password) == 0) {
+                loggedIn = 1;
+
+                if (users[i].role == 'S') {
+                    int choice;
+                    do {
+                        oddelovac();
+                        printf("1) Pridat uzivatele\n");
+                        printf("2) Odebrat uzivatele\n");
+                        printf("3) Zobrazit uzivatele\n");
+                        printf("4) Odhlasit se\n");
+                        choice = getValidChoice(1, 4);
+
+                        switch (choice) {
+                        case 1:
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
+                            char role;
+                            scanf(" %c", &role);
+                            addUser(role);
+                            break;
+                        case 2:
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
+                            scanf(" %c", &role);
+                            removeUser(role);
+                            break;
+                        case 3:
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
+                            scanf(" %c", &role);
+                            printUsersInline(role);
+                            break;
+                        case 4:
+                            clc();
+                            printf("Odhlaseni...\n");
+                            break;
+                        }
+                    } while (choice != 4);
+                }
+                else if (users[i].role == 'U') {
+                    int choice;
+                    do {
+                        oddelovac();
+                        printf("1) Pridat predmet studentovi\n");
+                        printf("2) Zadat body studentovi\n");
+                        printf("3) Zobrazit znamky studenta\n");
+                        printf("4) Odhlasit se\n");
+                        choice = getValidChoice(1, 4);
+
+                        switch (choice) {
+                        case 1: {
+                            char studentName[MAX_NAME_LEN];
+                            printf("Zadejte jmeno studenta: ");
+                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
+
+                            int studentIndex = -1;
+                            for (int j = 0; j < userCount; j++) {
+                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
+                                    studentIndex = j;
+                                    break;
+                                }
+                            }
+
+                            if (studentIndex == -1) {
+                                printf("Student nenalezen.\n");
+                            }
+                            else {
+                                addSubject(studentIndex);
+                            }
+                            break;
+                        }
+
+                        case 2: {
+                            char studentName[MAX_NAME_LEN];
+                            printf("Zadejte jmeno studenta: ");
+                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
+
+                            int studentIndex = -1;
+                            for (int j = 0; j < userCount; j++) {
+                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
+                                    studentIndex = j;
+                                    break;
+                                }
+                            }
+
+                            if (studentIndex == -1) {
+                                printf("Student nenalezen.\n");
+                            }
+                            else {
+                                assignPoints(studentIndex);
+                            }
+                            break;
+                        }
+
+                        case 3: {
+                            char studentName[MAX_NAME_LEN];
+                            printf("Zadejte jmeno studenta: ");
+                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
+
+                            int studentIndex = -1;
+                            for (int j = 0; j < userCount; j++) {
+                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
+                                    studentIndex = j;
+                                    break;
+                                }
+                            }
+
+                            if (studentIndex == -1) {
+                                printf("Student nenalezen.\n");
+                            }
+                            else {
+                                displayStudentGrades(studentIndex);
+                            }
+                            break;
+                        }
+
+                        case 4:
+                            clc();
+                            printf("Odhlaseni...\n");
+                            break;
+                        }
+                    } while (choice != 4);
+                }
+                else if (users[i].role == 'T') {
+                    int choice;
+                    do {
+                        oddelovac();
+                        printf("1) Zobrazit znamky\n");
+                        printf("2) Odhlasit se\n");
+                        choice = getValidChoice(1, 2);
+
+                        switch (choice) {
+                        case 1:
+                            displayStudentGrades(i);
+                            break;
+                        case 2:
+                            clc();
+                            printf("Odhlaseni...\n");
+                            break;
+                        }
+                    } while (choice != 2);
+                }
+                break;
+            }
+        }
+
+        if (!loggedIn) {
+            printf("Nespravne jmeno nebo heslo.\n");
+        }
+    }
+
+    return 0;
+}
