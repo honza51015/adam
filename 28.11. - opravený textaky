@@ -9,6 +9,7 @@
 #define MAX_GRADES 10
 #define FILE_PATH "data.txt"
 #define GRADES_FILE "grades.txt"
+#define MAX_FIXED_SUBJECTS 5
 
 typedef struct {
     char username[MAX_NAME_LEN];
@@ -24,6 +25,14 @@ typedef struct {
     int finalExamPoints;
     char grade;
 } Grade;
+
+const char* fixedSubjects[MAX_FIXED_SUBJECTS] = {
+    "PCT",
+    "FY",
+    "MPE",
+    "MA",
+    "EL"
+};
 
 User users[MAX_USERS];
 int userCount = 0;
@@ -45,6 +54,7 @@ char calculateGrade(int totalPoints);
 int getValidChoice(int min, int max);
 void oddelovac();
 void goBack();
+void clc();
 
 void loadUsers() {
     FILE* file = fopen(FILE_PATH, "r");
@@ -59,7 +69,25 @@ void loadUsers() {
         if (userCount >= MAX_USERS) break;
     }
     fclose(file);
+
+    // Přidání Admina, pokud neexistuje
+    int adminExists = 0;
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, "Admin") == 0) {
+            adminExists = 1;
+            break;
+        }
+    }
+    if (!adminExists) {
+        strcpy(users[userCount].username, "Admin");
+        strcpy(users[userCount].password, "1234"); // Výchozí heslo, případně změňte
+        users[userCount].role = 'S';
+        strcpy(users[userCount].subjects, "-");
+        userCount++;
+        //printf("Výchozí Admin přidán do paměti.\n");
+    }
 }
+
 void saveUsers() {
     FILE* file = fopen(FILE_PATH, "w");
     if (!file) {
@@ -68,10 +96,312 @@ void saveUsers() {
     }
 
     for (int i = 0; i < userCount; i++) {
+        // Přeskočte Admina
+        if (strcmp(users[i].username, "Admin") == 0) {
+            continue;
+        }
         fprintf(file, "%s %s %c %s\n", users[i].username, users[i].password, users[i].role, users[i].subjects);
     }
     fclose(file);
 }
+void gradeStudents(const char* teacherUsername) {
+    // Krok 1: Výpis skupin učitele
+    printf("Vase skupiny:\n");
+    char teacherGroups[MAX_USERS][MAX_NAME_LEN];
+    int groupCount = 0;
+
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, teacherUsername) == 0) { // Pouze skupiny přihlášeného učitele
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects);
+            char* token = strtok(tempSubjects, ",");
+            while (token != NULL) {
+                if (strncmp(token, "sk-", 3) == 0) { // Skupina
+                    strcpy(teacherGroups[groupCount++], token);
+                }
+                token = strtok(NULL, ",");
+            }
+            break;
+        }
+    }
+
+    if (groupCount == 0) {
+        printf("Nemate zadne prirazene skupiny.\n");
+        return;
+    }
+
+    for (int i = 0; i < groupCount; i++) {
+        printf("%d) %s\n", i + 1, teacherGroups[i]);
+    }
+
+    int groupChoice = getValidChoice(1, groupCount);
+    const char* selectedGroup = teacherGroups[groupChoice - 1];
+
+    // Krok 2: Výpis studentů v dané skupině
+    printf("Studenti ve skupine %s:\n", selectedGroup);
+    char groupStudents[MAX_USERS][MAX_NAME_LEN];
+    int studentCount = 0;
+
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'T' && strstr(users[i].subjects, selectedGroup)) {
+            strcpy(groupStudents[studentCount++], users[i].username);
+            printf("%d) %s\n", studentCount, users[i].username);
+        }
+    }
+
+    if (studentCount == 0) {
+        printf("Ve skupine nejsou zadni studenti.\n");
+        return;
+    }
+
+    // Krok 3: Výběr studentů
+    printf("Zadejte cisla studentu oddelena carkou: ");
+    char input[MAX_NAME_LEN];
+    scanf(" %49[^\n]", input);
+
+    int selectedStudents[MAX_USERS];
+    int selectedCount = 0;
+    char* studentToken = strtok(input, ",");
+    while (studentToken != NULL) {
+        int index = atoi(studentToken) - 1;
+        if (index >= 0 && index < studentCount) {
+            selectedStudents[selectedCount++] = index;
+        }
+        else {
+            printf("Neplatny vyber: %s\n", studentToken);
+        }
+        studentToken = strtok(NULL, ",");
+    }
+
+    if (selectedCount == 0) {
+        printf("Nebyl vybran zadny student.\n");
+        return;
+    }
+
+    // Krok 4: Zadání známky a váhy
+    int grade;
+    int weight;
+    printf("Zadejte znamku (1-5): ");
+    scanf("%d", &grade);
+    while (grade < 1 || grade > 5) {
+        printf("Neplatna znamka. Zadejte hodnotu mezi 1 a 5: ");
+        scanf("%d", &grade);
+    }
+
+    printf("Zadejte vahu znamky (1-3): ");
+    scanf("%d", &weight);
+    while (weight < 1 || weight > 3) {
+        printf("Neplatna vaha. Zadejte hodnotu mezi 1 a 3: ");
+        scanf("%d", &weight);
+    }
+
+    // Krok 5: Uložení známky ke všem vybraným studentům
+    char gradeRecord[MAX_NAME_LEN];
+    snprintf(gradeRecord, sizeof(gradeRecord), "%dz%dv%s", grade, weight, selectedGroup);
+
+    for (int i = 0; i < selectedCount; i++) {
+        int studentIndex = -1;
+        for (int j = 0; j < userCount; j++) {
+            if (strcmp(users[j].username, groupStudents[selectedStudents[i]]) == 0) {
+                studentIndex = j;
+                break;
+            }
+        }
+        if (studentIndex != -1) {
+            strcat(users[studentIndex].subjects, ",");
+            strcat(users[studentIndex].subjects, gradeRecord);
+        }
+    }
+
+    printf("Znamka %d s vahou %d byla prirazena studentum ve skupine %s.\n", grade, weight, selectedGroup);
+    saveUsers();
+}
+
+void viewGroupGrades(const char* teacherUsername) {
+    // Krok 1: Výpis skupin učitele
+    printf("Vase skupiny:\n");
+    char teacherGroups[MAX_USERS][MAX_NAME_LEN];
+    int groupCount = 0;
+
+    // Načtení skupin učitele
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, teacherUsername) == 0) { // Pouze skupiny přihlášeného učitele
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects);
+            char* token = strtok(tempSubjects, ",");
+            while (token != NULL) {
+                if (strncmp(token, "sk-", 3) == 0) { // Skupina
+                    strcpy(teacherGroups[groupCount++], token);
+                }
+                token = strtok(NULL, ",");
+            }
+            break;
+        }
+    }
+
+    if (groupCount == 0) {
+        printf("Nemate zadne prirazene skupiny.\n");
+        return;
+    }
+
+    // Výpis skupin učitele
+    for (int i = 0; i < groupCount; i++) {
+        printf("%d) %s\n", i + 1, teacherGroups[i]);
+    }
+
+    // Výběr skupiny
+    int groupChoice = getValidChoice(1, groupCount);
+    const char* selectedGroup = teacherGroups[groupChoice - 1];
+
+    // Krok 2: Výpis studentů a jejich známek
+    printf("Studenti a jejich znamky ve skupine %s:\n", selectedGroup);
+
+    int studentCount = 0;
+
+    // Iterace přes všechny studenty
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'T' && strstr(users[i].subjects, selectedGroup)) { // Pouze studenti v dané skupině
+            printf("%s-", users[i].username);
+
+            // Výpis známek patřících k vybrané skupině
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects);
+            char* token = strtok(tempSubjects, ",");
+            int first = 1;
+            double totalGrade = 0.0;
+            int totalWeight = 0;
+
+            while (token != NULL) {
+                // Kontrola, zda token končí vybranou skupinou
+                size_t tokenLen = strlen(token);
+                size_t groupLen = strlen(selectedGroup);
+                if (tokenLen > groupLen && strcmp(&token[tokenLen - groupLen], selectedGroup) == 0) {
+                    if (!first) printf(",");
+                    printf("%.*s", (int)(tokenLen - groupLen), token); // Vypisujeme vše před skupinou
+                    first = 0;
+
+                    // Výpočet průměrné známky
+                    int grade, weight;
+                    if (sscanf(token, "%dz%dv", &grade, &weight) == 2) {
+                        totalGrade += grade * weight;
+                        totalWeight += weight;
+                    }
+                }
+                token = strtok(NULL, ",");
+            }
+
+            if (first) { // Pokud student nemá žádné známky pro skupinu
+                printf("zadne znamky");
+            } else {
+                if (totalWeight > 0) {
+                    double average = totalGrade / totalWeight;
+                    printf(" | Prumer: %.2f", average);
+                }
+            }
+            printf("\n");
+            studentCount++;
+        }
+    }
+
+    if (studentCount == 0) {
+        printf("Ve skupine nejsou zadni studenti.\n");
+    }
+}
+
+void viewStudentGrades(const char* studentUsername) {
+    // Krok 1: Výpis skupin studenta
+    printf("Vase studijni skupiny:\n");
+    char studentGroups[MAX_USERS][MAX_NAME_LEN];
+    int groupCount = 0;
+
+    // Načtení skupin studenta
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, studentUsername) == 0) { // Pouze skupiny přihlášeného studenta
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects);
+            char* token = strtok(tempSubjects, ",");
+            while (token != NULL) {
+                if (strncmp(token, "sk-", 3) == 0) { // Skupina
+                    strcpy(studentGroups[groupCount++], token);
+                }
+                token = strtok(NULL, ",");
+            }
+            break;
+        }
+    }
+
+    if (groupCount == 0) {
+        printf("Nemate zadne prirazene studijni skupiny.\n");
+        return;
+    }
+
+    // Výpis skupin studenta
+    for (int i = 0; i < groupCount; i++) {
+        printf("%d) %s\n", i + 1, studentGroups[i]);
+    }
+
+    // Výběr skupiny
+    int groupChoice = getValidChoice(1, groupCount);
+    const char* selectedGroup = studentGroups[groupChoice - 1];
+
+    // Krok 2: Výpis známek studenta ve vybrané skupině
+    printf("Znamky ve skupine %s:\n", selectedGroup);
+
+    // Vyhledání studenta
+    for (int i = 0; i < userCount; i++) {
+        if (strcmp(users[i].username, studentUsername) == 0) { // Pouze přihlášený student
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects);
+            char* token = strtok(tempSubjects, ",");
+            int hasGrades = 0;
+            double totalGrade = 0.0;
+            int totalWeight = 0;
+
+            while (token != NULL) {
+                // Kontrola, zda token končí vybranou skupinou
+                size_t tokenLen = strlen(token);
+                size_t groupLen = strlen(selectedGroup);
+                if (tokenLen > groupLen && strcmp(&token[tokenLen - groupLen], selectedGroup) == 0) {
+                    if (hasGrades) printf(","); // Odděluje známky čárkou
+                    printf("%.*s", (int)(tokenLen - groupLen), token); // Vypisuje část před skupinou
+                    hasGrades = 1;
+
+                    // Výpočet průměrné známky
+                    int grade, weight;
+                    if (sscanf(token, "%dz%dv", &grade, &weight) == 2) {
+                        totalGrade += grade * weight;
+                        totalWeight += weight;
+                    }
+                }
+                token = strtok(NULL, ",");
+            }
+
+            if (!hasGrades) { // Pokud student nemá žádné známky pro skupinu
+                printf("zadne znamky");
+            }
+            else {
+                if (totalWeight > 0) {
+                    double average = totalGrade / totalWeight;
+                    printf(" | Prumer: %.2f", average);
+                }
+            }
+            printf("\n");
+            return;
+        }
+    }
+
+    printf("Student nenalezen.\n");
+}
+
+
+
+
+
+
+
+
+
+
 
 void loadGrades() {
     FILE* file = fopen(GRADES_FILE, "r");
@@ -142,15 +472,77 @@ void addUser(char role) {
     printf("Zadejte heslo uzivatele: ");
     scanf("%49s", password);
 
+    // Inicializace předmětů
+    char subjects[MAX_SUBJECTS_LEN] = "-";
+
+    // Pokud je role učitel, nabídne se výběr více předmětů
+    if (role == 'U') {
+        printf("Vyberte predmety, ktere ucitel vyucuje (zadavejte cisla oddelena carkou):\n");
+        for (int i = 0; i < MAX_FIXED_SUBJECTS; i++) {
+            printf("%d) %s\n", i + 1, fixedSubjects[i]);
+        }
+
+        char input[MAX_SUBJECTS_LEN];
+        printf("Zadejte volbu: ");
+        scanf(" %99[^\n]", input);
+
+        // Zpracování čísel na názvy předmětů
+        char* token = strtok(input, ",");
+        subjects[0] = '\0'; // Vynulování pro sestavení seznamu předmětů
+        while (token != NULL) {
+            int subjectIndex = atoi(token) - 1; // Převod na index
+            if (subjectIndex >= 0 && subjectIndex < MAX_FIXED_SUBJECTS) {
+                if (subjects[0] != '\0') {
+                    strcat(subjects, ","); // Přidání čárky mezi předměty
+                }
+                strcat(subjects, fixedSubjects[subjectIndex]);
+            }
+            else {
+                printf("Neplatna volba: %s\n", token);
+            }
+            token = strtok(NULL, ",");
+        }
+
+        if (subjects[0] == '\0') {
+            strcpy(subjects, "-"); // Pokud nebyly zadány platné předměty
+        }
+    }
+
+    // Pokud je role student, nabídne se výběr jednoho předmětu
+    if (role == 'T') {
+        const char* studentSubjects[] = {
+            "BPC-TLI1A",
+            "BPC-TLI1B",
+            "BPC-TLI2A",
+            "BPC-TLI2B",
+            "BPC-TLI3A",
+            "BPC-TLI3B"
+        };
+        const int numStudentSubjects = sizeof(studentSubjects) / sizeof(studentSubjects[0]);
+
+        printf("Vyberte predmet, ktery bude student studovat (maximalne jeden):\n");
+        for (int i = 0; i < numStudentSubjects; i++) {
+            printf("%d) %s\n", i + 1, studentSubjects[i]);
+        }
+
+        int choice = getValidChoice(1, numStudentSubjects);
+        strcpy(subjects, studentSubjects[choice - 1]); // Zapsání vybraného předmětu
+    }
+
+    // Uložení nového uživatele
     strcpy(users[userCount].username, username);
     strcpy(users[userCount].password, password);
     users[userCount].role = role;
-    strcpy(users[userCount].subjects, "-");
+    strcpy(users[userCount].subjects, subjects);
     userCount++;
 
     printf("Uzivatel pridan.\n");
     saveUsers();
 }
+
+
+
+
 void removeUser(char role) {
     printf("Aktualni %s (jmena): ", role == 'S' ? "spravci" : (role == 'T' ? "studenti" : "ucitele"));
     printUsersInline(role);
@@ -173,24 +565,211 @@ void removeUser(char role) {
 
     printf("Uzivatel nenalezen.\n");
 }
+
+void createGroup() {
+    char groupName[MAX_NAME_LEN];
+    char chosenSubject[MAX_NAME_LEN];
+    char chosenClass[MAX_NAME_LEN];
+    char chosenTeacher[MAX_NAME_LEN];
+
+    // Krok 1: Zadání názvu skupiny
+    printf("Zadejte nazev skupiny: ");
+    scanf(" %49[^\n]", groupName);
+    char prefixedGroupName[MAX_NAME_LEN];
+    snprintf(prefixedGroupName, sizeof(prefixedGroupName), "sk-%s", groupName);
+
+    // Krok 2: Výběr předmětu
+    printf("Vyberte predmet ze seznamu:\n");
+    for (int i = 0; i < MAX_FIXED_SUBJECTS; i++) {
+        printf("%d) %s\n", i + 1, fixedSubjects[i]);
+    }
+    int subjectChoice = getValidChoice(1, MAX_FIXED_SUBJECTS);
+    strcpy(chosenSubject, fixedSubjects[subjectChoice - 1]);
+
+    // Krok 3: Vypsání dostupných učitelů
+    printf("Dostupni ucitele pro predmet '%s':\n", chosenSubject);
+    int availableTeachers = 0;
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'U' && strstr(users[i].subjects, chosenSubject)) {
+            printf("- %s\n", users[i].username);
+            availableTeachers++;
+        }
+    }
+
+    if (availableTeachers == 0) {
+        printf("Neni dostupny zadny vyucujici pro tento predmet.\n");
+        return;
+    }
+
+    printf("Zadejte jmeno vybraneho ucitele: ");
+    scanf(" %49s", chosenTeacher);
+
+    // Krok 4: Výběr třídy bez omezení na existenci skupin
+    const char* studentClasses[] = {
+        "BPC-TLI1A",
+        "BPC-TLI1B",
+        "BPC-TLI2A",
+        "BPC-TLI2B",
+        "BPC-TLI3A",
+        "BPC-TLI3B"
+    };
+    const int numStudentClasses = sizeof(studentClasses) / sizeof(studentClasses[0]);
+
+    printf("Dostupne tridy:\n");
+    int availableClasses = 0;
+    char availableClassMap[MAX_USERS][MAX_NAME_LEN]; // Mapování pro výběr
+    for (int i = 0; i < numStudentClasses; i++) {
+        int hasStudents = 0;
+        for (int j = 0; j < userCount; j++) {
+            if (users[j].role == 'T' && strstr(users[j].subjects, studentClasses[i])) {
+                hasStudents = 1;
+                break;
+            }
+        }
+        if (hasStudents) { // Zobrazit třídu, pokud ji má alespoň jeden student
+            printf("%d) %s\n", availableClasses + 1, studentClasses[i]);
+            strcpy(availableClassMap[availableClasses], studentClasses[i]);
+            availableClasses++;
+        }
+    }
+
+    if (availableClasses == 0) {
+        printf("Zadna dostupna trida.\n");
+        return;
+    }
+
+    int classChoice = getValidChoice(1, availableClasses);
+    strcpy(chosenClass, availableClassMap[classChoice - 1]);
+
+    // Krok 5: Přidání skupiny k učiteli a studentům
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'U' && strcmp(users[i].username, chosenTeacher) == 0) {
+            strcat(users[i].subjects, ",");
+            strcat(users[i].subjects, prefixedGroupName);
+        }
+        else if (users[i].role == 'T' && strstr(users[i].subjects, chosenClass)) {
+            strcat(users[i].subjects, ",");
+            strcat(users[i].subjects, prefixedGroupName);
+        }
+    }
+
+    printf("Skupina '%s' vytvorena a prirazena uciteli '%s' a studentum tridy '%s'.\n", prefixedGroupName, chosenTeacher, chosenClass);
+    saveUsers();
+}
+
+
+
+
+
+
+void displayGroups() {
+    // Krok 1: Filtrování skupin podle prefixu
+    char groups[MAX_USERS][MAX_NAME_LEN];
+    int groupCount = 0;
+
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'U' || users[i].role == 'T') {
+            char tempSubjects[MAX_SUBJECTS_LEN];
+            strcpy(tempSubjects, users[i].subjects); // Kopie pro strtok
+            char* token = strtok(tempSubjects, ",");
+            while (token != NULL) {
+                if (strncmp(token, "sk-", 3) == 0) { // Jen skupiny
+                    int isNewGroup = 1;
+                    for (int j = 0; j < groupCount; j++) {
+                        if (strcmp(groups[j], token) == 0) {
+                            isNewGroup = 0;
+                            break;
+                        }
+                    }
+                    if (isNewGroup) {
+                        strcpy(groups[groupCount++], token);
+                    }
+                }
+                token = strtok(NULL, ",");
+            }
+        }
+    }
+
+    if (groupCount == 0) {
+        printf("Zadne skupiny nejsou vytvoreny.\n");
+        return;
+    }
+
+    // Krok 2: Výběr skupiny
+    printf("Aktualni skupiny:\n");
+    for (int i = 0; i < groupCount; i++) {
+        printf("%d) %s\n", i + 1, groups[i]);
+    }
+
+    int choice = getValidChoice(1, groupCount);
+    const char* selectedGroup = groups[choice - 1];
+
+    // Krok 3: Zobrazení detailů o skupině
+    printf("Skupina: %s\n", selectedGroup);
+
+    printf("Ucitel: ");
+    int teacherFound = 0;
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'U' && strstr(users[i].subjects, selectedGroup)) {
+            printf("%s\n", users[i].username);
+            teacherFound = 1;
+            break;
+        }
+    }
+    if (!teacherFound) {
+        printf("Zadny ucitel prirazen.\n");
+    }
+
+    printf("Studenti: ");
+    int studentFound = 0;
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].role == 'T' && strstr(users[i].subjects, selectedGroup)) {
+            printf("%s ", users[i].username);
+            studentFound = 1;
+        }
+    }
+    if (!studentFound) {
+        printf("Zadni studenti prirazeni.\n");
+    }
+    printf("\n");
+}
+
+
+
 void addSubject(int studentIndex) {
     if (gradesCount[studentIndex] >= MAX_GRADES) {
         printf("Maximalni pocet predmetu dosazen.\n");
         return;
     }
 
-    printf("Zadejte nazev predmetu: ");
-    scanf("%49s", grades[studentIndex][gradesCount[studentIndex]].subject);
+    printf("Vyberte predmet:\n");
+    for (int i = 0; i < MAX_FIXED_SUBJECTS; i++) {
+        printf("%d) %s\n", i + 1, fixedSubjects[i]);
+    }
 
+    int choice = getValidChoice(1, MAX_FIXED_SUBJECTS);
+    const char* selectedSubject = fixedSubjects[choice - 1];
+
+    // Kontrola, jestli už student tento předmět nemá
+    for (int i = 0; i < gradesCount[studentIndex]; i++) {
+        if (strcmp(grades[studentIndex][i].subject, selectedSubject) == 0) {
+            printf("Tento predmet je uz studentovi prirazen.\n");
+            return;
+        }
+    }
+
+    // Přidání předmětu studentovi
+    strcpy(grades[studentIndex][gradesCount[studentIndex]].subject, selectedSubject);
     grades[studentIndex][gradesCount[studentIndex]].exercisePoints = 0;
     grades[studentIndex][gradesCount[studentIndex]].testPoints = 0;
     grades[studentIndex][gradesCount[studentIndex]].finalExamPoints = 0;
     grades[studentIndex][gradesCount[studentIndex]].grade = 'F';
 
     gradesCount[studentIndex]++;
-    printf("Predmet pridan.\n");
+    printf("Predmet '%s' pridan.\n", selectedSubject);
     saveGrades();
 }
+
 void assignPoints(int studentIndex) {
     if (gradesCount[studentIndex] == 0) {
         printf("Tento student nema zadne zapsane predmety.\n");
@@ -271,6 +850,9 @@ void goBack() {
     printf("Navrat do menu...\n");
 }
 
+void clc() {
+    system("cls"); // Windows
+}
 
 int main() {
     loadUsers();
@@ -304,115 +886,65 @@ int main() {
                         printf("1) Pridat uzivatele\n");
                         printf("2) Odebrat uzivatele\n");
                         printf("3) Zobrazit uzivatele\n");
-                        printf("4) Odhlasit se\n");
-                        choice = getValidChoice(1, 4);
+                        printf("4) Vytvorit skupinu\n");
+                        printf("5) Zobrazit skupiny\n");
+                        printf("6) Odhlasit se\n");
+                        choice = getValidChoice(1, 6);
 
                         switch (choice) {
                         case 1:
-                            printf("Zadejte roli (S/T/U): ");
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
                             char role;
                             scanf(" %c", &role);
                             addUser(role);
                             break;
                         case 2:
-                            printf("Zadejte roli (S/T/U): ");
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
                             scanf(" %c", &role);
                             removeUser(role);
                             break;
                         case 3:
-                            printf("Zadejte roli (S/T/U): ");
+                            printf("Zadejte roli (S - spravce/T - student/U - ucitel): ");
                             scanf(" %c", &role);
                             printUsersInline(role);
                             break;
                         case 4:
+                            createGroup();
+                            break;
+                        case 5:
+                            displayGroups();
+                            break;
+                        case 6:
+                            clc();
                             printf("Odhlaseni...\n");
                             break;
                         }
-                    } while (choice != 4);
+                    } while (choice != 6);
                 }
                 else if (users[i].role == 'U') {
                     int choice;
                     do {
                         oddelovac();
-                        printf("1) Pridat predmet studentovi\n");
-                        printf("2) Zadat body studentovi\n");
-                        printf("3) Zobrazit znamky studenta\n");
-                        printf("4) Odhlasit se\n");
-                        choice = getValidChoice(1, 4);
+                        printf("1) Znamkovani studentu\n");
+                        printf("2) Zobrazit znamky studentu\n");
+                        printf("3) Odhlasit se\n");
+                        choice = getValidChoice(1, 3);
 
                         switch (choice) {
-                        case 1: {
-                            char studentName[MAX_NAME_LEN];
-                            printf("Zadejte jmeno studenta: ");
-                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
-
-                            int studentIndex = -1;
-                            for (int j = 0; j < userCount; j++) {
-                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
-                                    studentIndex = j;
-                                    break;
-                                }
-                            }
-
-                            if (studentIndex == -1) {
-                                printf("Student nenalezen.\n");
-                            }
-                            else {
-                                addSubject(studentIndex);
-                            }
+                        case 1:
+                            gradeStudents(users[i].username); // Přidán parametr učitele
                             break;
-                        }
-
-                        case 2: {
-                            char studentName[MAX_NAME_LEN];
-                            printf("Zadejte jmeno studenta: ");
-                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
-
-                            int studentIndex = -1;
-                            for (int j = 0; j < userCount; j++) {
-                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
-                                    studentIndex = j;
-                                    break;
-                                }
-                            }
-
-                            if (studentIndex == -1) {
-                                printf("Student nenalezen.\n");
-                            }
-                            else {
-                                assignPoints(studentIndex);
-                            }
+                        case 2:
+                            viewGroupGrades(users[i].username);
                             break;
-                        }
-
-                        case 3: {
-                            char studentName[MAX_NAME_LEN];
-                            printf("Zadejte jmeno studenta: ");
-                            scanf(" %49[^\n]", studentName); // Spravne nacitani celeho jmena
-
-                            int studentIndex = -1;
-                            for (int j = 0; j < userCount; j++) {
-                                if (users[j].role == 'T' && strcmp(users[j].username, studentName) == 0) {
-                                    studentIndex = j;
-                                    break;
-                                }
-                            }
-
-                            if (studentIndex == -1) {
-                                printf("Student nenalezen.\n");
-                            }
-                            else {
-                                displayStudentGrades(studentIndex);
-                            }
-                            break;
-                        }
-
-                        case 4:
+                        case 3:
+                            clc();
                             printf("Odhlaseni...\n");
                             break;
                         }
-                    } while (choice != 4);
+                    } while (choice != 3);
                 }
+
                 else if (users[i].role == 'T') {
                     int choice;
                     do {
@@ -423,9 +955,10 @@ int main() {
 
                         switch (choice) {
                         case 1:
-                            displayStudentGrades(i);
+                            viewStudentGrades(users[i].username); // Nová funkce pro zobrazení známek studenta
                             break;
                         case 2:
+                            clc();
                             printf("Odhlaseni...\n");
                             break;
                         }
