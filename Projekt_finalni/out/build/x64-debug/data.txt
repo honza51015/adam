@@ -1,0 +1,3 @@
+janik 3 U MA,sk-MA1
+Adam 1 T BPC-TLI1A,sk-MA1,cvz20sk-MA1,tz10sk-MA1,zkz30sk-MA1
+Pepa 2 T BPC-TLI1A,sk-MA1,zkz40sk-MA1,zkz40sk-MA1

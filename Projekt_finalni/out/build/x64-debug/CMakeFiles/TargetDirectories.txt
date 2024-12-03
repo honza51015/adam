@@ -1,0 +1,3 @@
+C:/Users/user/Desktop/škola/1. Výška/1/2. Zimní semestr/Počítače a programování 1/projekt/Projekt_finalni/out/build/x64-debug/CMakeFiles/Projekt_finalni.dir
+C:/Users/user/Desktop/škola/1. Výška/1/2. Zimní semestr/Počítače a programování 1/projekt/Projekt_finalni/out/build/x64-debug/CMakeFiles/edit_cache.dir
+C:/Users/user/Desktop/škola/1. Výška/1/2. Zimní semestr/Počítače a programování 1/projekt/Projekt_finalni/out/build/x64-debug/CMakeFiles/rebuild_cache.dir
